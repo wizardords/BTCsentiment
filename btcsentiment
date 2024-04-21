@@ -1,0 +1,78 @@
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import requests
+import pandas as pd
+
+# Load model and tokenizer
+model_name = "distilbert-base-uncased"
+model = AutoModelForSequenceClassification.from_pretrained(model_name)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+# Define a function to preprocess text data
+def preprocess(text):
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+    return inputs["input_ids"], inputs["attention_mask"]
+
+# Function to fetch real-time data from an API
+def fetch_crypto_data(api_url):
+    headers = {
+        "Accepts": "application/json",
+        "X-CMC_PRO_API_KEY": api_key  # Pass the API key in the header
+    }
+    response = requests.get(api_url, headers=headers)
+    response.raise_for_status()  # Check if the request was successful
+    data = response.json()  # Assume the API returns JSON data
+    return data
+
+# Define a function to analyze sentiment for a list of texts
+def analyze_sentiment(texts):
+    # Preprocess the text data
+    inputs, attention_masks = preprocess(texts)
+    
+    # Predict sentiment for each text snippet
+    with torch.no_grad():
+        outputs = model(inputs, attention_mask=attention_masks)
+        predictions = outputs.logits.argmax(dim=-1)
+    
+    # Convert predictions to human-readable sentiment
+    sentiment_labels = {0: "Negative", 1: "Neutral", 2: "Positive"}  # Example mapping
+    sentiments = [sentiment_labels[p.item()] for p in predictions]
+
+    return sentiments
+
+api_key = "76ba3bfc-c63c-4eb5-8795-fdb6fc4923fa"
+api_url = f"https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC&convert=USD"
+
+crypto_data = fetch_crypto_data(api_url)
+if crypto_data is not None and "data" in crypto_data:
+    btc_data = crypto_data["data"].get("BTC", None)
+    if btc_data:
+        print(btc_data)
+        # Extract text data from the API response
+        texts = [btc_data["name"], btc_data["slug"]]  # Extract relevant data
+        # Analyze sentiment for the fetched data
+        sentiments = analyze_sentiment(texts)
+
+        # Create a DataFrame to display results
+        crypto_df = pd.DataFrame({
+            "Text": texts,
+            "Sentiment": sentiments
+        })
+
+        print(crypto_df)
+
+# Define a function to predict sentiment for a given text
+def predict(text):
+    inputs, attention_masks = preprocess(text)
+    with torch.no_grad():
+        outputs = model(inputs, attention_mask=attention_masks)
+        predictions = outputs.logits.argmax(dim=-1)
+    
+    sentiment_labels = {0: "Negative", 1: "Neutral", 2: "Positive"}
+    return sentiment_labels[predictions.item()]
+
+# Test the prediction function
+sample_text = "Bitcoin price is surging!"
+sentiment = predict(sample_text)
+print(f"Sentiment for '{sample_text}': {sentiment}")
+
